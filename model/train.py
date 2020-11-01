@@ -70,6 +70,8 @@ parser.add_argument('--clip', type=float, default=0.25,
                     help='gradient clipping')
 parser.add_argument('--clip_nonemb', action='store_true',
                     help='only clip the gradient of non-embedding params')
+parser.add_argument('--start_step', type=int, default=0,
+                    help='number of first training step')
 parser.add_argument('--max_step', type=int, default=100000,
                     help='upper epoch limit')
 parser.add_argument('--batch_size', type=int, default=60,
@@ -536,7 +538,7 @@ def train():
             break
 
 # Loop over epochs.
-train_step = 0
+train_step = args.start_step
 train_loss = 0
 best_val_loss = None
 
