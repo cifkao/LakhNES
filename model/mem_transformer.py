@@ -3,6 +3,7 @@ Gently modified by @chrisdonahue from the original
 https://raw.githubusercontent.com/kimiyoung/transformer-xl/master/pytorch/mem_transformer.py
 """
 
+import os
 import sys
 import math
 import functools
@@ -13,7 +14,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-sys.path.append('utils')
+code_model_dir = os.path.dirname(os.path.abspath(__file__))
+code_utils_dir = os.path.join(code_model_dir, 'utils')
+sys.path.append(code_utils_dir)
+
 from proj_adaptive_softmax import ProjectedAdaptiveLogSoftmax
 from log_uniform_sampler import LogUniformSampler, sample_logits
 

@@ -29,9 +29,10 @@ def create_exp_dir(dir_path, scripts_to_save=None, debug=False):
         script_path = os.path.join(dir_path, 'scripts')
         if not os.path.exists(script_path):
             os.makedirs(script_path)
+        src_dir = os.path.dirname(os.path.dirname(__file__))
         for script in scripts_to_save:
             dst_file = os.path.join(dir_path, 'scripts', os.path.basename(script))
-            shutil.copyfile(script, dst_file)
+            shutil.copyfile(os.path.join(src_dir, script), dst_file)
 
     return get_logger(log_path=os.path.join(dir_path, 'log.txt'))
 
