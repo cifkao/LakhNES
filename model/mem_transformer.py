@@ -508,7 +508,8 @@ class MemTransformerLM(nn.Module):
                  tgt_len=None, ext_len=None, mem_len=None, 
                  cutoffs=[], adapt_inp=False,
                  same_length=False, attn_type=0, clamp_len=-1, 
-                 sample_softmax=-1):
+                 sample_softmax=-1,
+                 d_cond=None):
         super(MemTransformerLM, self).__init__()
         self.n_token = n_token
 
@@ -517,9 +518,16 @@ class MemTransformerLM(nn.Module):
         self.d_model = d_model
         self.n_head = n_head
         self.d_head = d_head
+        self.d_cond = d_cond
 
         self.word_emb = AdaptiveEmbedding(n_token, d_embed, d_model, cutoffs, 
                                           div_val=div_val)
+
+        if d_cond:
+            self.cond_proj = nn.Linear(in_features=d_cond, out_features=d_model)
+
+            if same_length or attn_type != 0:
+                raise NotImplementedError()
 
         self.drop = nn.Dropout(dropout)
 
@@ -648,10 +656,14 @@ class MemTransformerLM(nn.Module):
 
         return new_mems
 
-    def _forward(self, dec_inp, mems=None):
+    def _forward(self, dec_inp, mems=None, cond=None):
         qlen, bsz = dec_inp.size()
 
         word_emb = self.word_emb(dec_inp)
+
+        if cond is not None:
+            cond = self.cond_proj(cond)
+            cond = self.drop(cond)
 
         mlen = mems[0].size(0) if mems is not None else 0
         klen = mlen + qlen
@@ -743,12 +755,12 @@ class MemTransformerLM(nn.Module):
 
         return core_out, new_mems
 
-    def forward_generate(self, data, *mems):
+    def forward_generate(self, data, *mems, cond=None):
         if not mems: mems = self.init_mems()
 
         tgt_len = data.size(0)
         batch_size = data.size(1)
-        hidden, new_mems = self._forward(data, mems=mems)
+        hidden, new_mems = self._forward(data, mems=mems, cond=cond)
 
         pred_hid = hidden[-tgt_len:]
 
@@ -766,7 +778,7 @@ class MemTransformerLM(nn.Module):
         else:
             return [logits] + new_mems
 
-    def forward(self, data, target, *mems):
+    def forward(self, data, target, *mems, cond=None):
         # nn.DataParallel does not allow size(0) tensors to be broadcasted.
         # So, have to initialize size(0) mems inside the model forward.
         # Moreover, have to return new_mems to allow nn.DataParallel to piece
@@ -774,7 +786,7 @@ class MemTransformerLM(nn.Module):
         if not mems: mems = self.init_mems()
 
         tgt_len = target.size(0)
-        hidden, new_mems = self._forward(data, mems=mems)
+        hidden, new_mems = self._forward(data, mems=mems, cond=cond)
 
         pred_hid = hidden[-tgt_len:]
         if self.sample_softmax > 0 and self.training:

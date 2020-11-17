@@ -121,6 +121,8 @@ parser.add_argument('--work_dir', default='LM-TFM', type=str,
                     help='experiment directory.')
 parser.add_argument('--restart', action='store_true',
                     help='restart training from the saved checkpoint')
+parser.add_argument('--restart_state', action='store_true',
+                    help='restart training from the saved state dict')
 parser.add_argument('--restart_dir', type=str, default='',
                     help='restart dir')
 parser.add_argument('--debug', action='store_true',
@@ -294,6 +296,10 @@ else:
         clamp_len=args.clamp_len, sample_softmax=args.sample_softmax)
     model.apply(weights_init)
     model.word_emb.apply(weights_init) # ensure embedding init is not overridden by out_layer in case of weight sharing
+
+    if args.restart_state:
+        with open(os.path.join(args.restart_dir, 'model_state.pt'), 'rb') as f:
+            model.load_state_dict(torch.load(f))
 args.n_all_param = sum([p.nelement() for p in model.parameters()])
 args.n_nonemb_param = sum([p.nelement() for p in model.layers.parameters()])
 
@@ -376,7 +382,7 @@ if args.cuda and args.fp16:
                                dynamic_loss_scale = args.dynamic_loss_scale,
                                dynamic_loss_args = {'init_scale': 2 ** 16})
 
-if args.restart:
+if args.restart or args.restart_state:
     if os.path.exists(os.path.join(args.restart_dir, 'optimizer.pt')):
         with open(os.path.join(args.restart_dir, 'optimizer.pt'), 'rb') as f:
             opt_state_dict = torch.load(f)
@@ -412,10 +418,16 @@ def evaluate(eval_iter):
     total_len, total_loss = 0, 0.
     with torch.no_grad():
         mems = tuple()
-        for i, (data, target, seq_len) in enumerate(eval_iter):
+        for i, (data, seq_len) in enumerate(eval_iter):
+            if len(data) == 2:
+                data, target = data
+                cond = None
+            else:
+                data, target, cond = data
+
             if args.max_eval_steps > 0 and i >= args.max_eval_steps:
                 break
-            ret = model(data, target, *mems)
+            ret = model(data, target, *mems, cond=cond)
             loss, mems = ret[0], ret[1:]
             loss = loss.mean()
             total_loss += seq_len * loss.float().item()
@@ -437,7 +449,13 @@ def train():
     else:
         mems = tuple()
     train_iter = tr_iter.get_varlen_iter() if args.varlen else tr_iter
-    for batch, (data, target, seq_len) in enumerate(train_iter):
+    for batch, (data, seq_len) in enumerate(train_iter):
+        if len(data) == 2:
+            data, target = data
+            cond = None
+        else:
+            data, target, cond = data
+
         model.zero_grad()
         if args.batch_chunk > 1:
             data_chunks = torch.chunk(data, args.batch_chunk, 1)
@@ -445,7 +463,7 @@ def train():
             for i in range(args.batch_chunk):
                 data_i = data_chunks[i].contiguous()
                 target_i = target_chunks[i].contiguous()
-                ret = para_model(data_i, target_i, *mems[i])
+                ret = para_model(data_i, target_i, *mems[i], cond=cond)
                 loss, mems[i] = ret[0], ret[1:]
                 loss = loss.float().mean().type_as(loss) / args.batch_chunk
                 if args.fp16:
@@ -454,7 +472,7 @@ def train():
                     loss.backward()
                 train_loss += loss.float().item()
         else:
-            ret = para_model(data, target, *mems)
+            ret = para_model(data, target, *mems, cond=cond)
             loss, mems = ret[0], ret[1:]
             loss = loss.float().mean().type_as(loss)
             if args.fp16:

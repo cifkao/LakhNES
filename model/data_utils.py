@@ -40,7 +40,7 @@ class LMOrderedIterator(object):
         data = self.data[beg_idx:end_idx]
         target = self.data[i+1:i+1+seq_len]
 
-        return data, target, seq_len
+        return (data, target), seq_len
 
     def get_fixlen_iter(self, start=0):
         for i in range(start, self.data.size(0) - 1, self.bptt):
@@ -52,9 +52,9 @@ class LMOrderedIterator(object):
         while True:
             bptt = self.bptt if np.random.random() < 0.95 else self.bptt / 2.
             bptt = min(max_len, max(min_len, int(np.random.normal(bptt, std))))
-            data, target, seq_len = self.get_batch(i, bptt)
+            data, seq_len = self.get_batch(i, bptt)
             i += seq_len
-            yield data, target, seq_len
+            yield data, seq_len
             if i >= self.data.size(0) - 2:
                 break
 
@@ -127,7 +127,7 @@ class LMShuffledIterator(object):
             data = data.to(self.device)
             target = target.to(self.device)
 
-            yield data, target, self.bptt
+            yield (data, target), self.bptt
 
             n_retain = min(data.size(0), self.ext_len)
             if n_retain > 0:
@@ -203,6 +203,88 @@ class LMMultiFileIterator(LMShuffledIterator):
           yield batch
 
 
+class ConditionalLMMultiFileIterator(LMMultiFileIterator):
+
+    def stream_iterator(self, sent_and_cond_stream):
+        # Copied from LMShuffledIterator. The only difference is the additional conditioning.
+
+        # streams for each data in the batch
+        streams = [None] * self.bsz
+        conds = [None] * self.bsz
+
+        data = torch.LongTensor(self.bptt, self.bsz)
+        target = torch.LongTensor(self.bptt, self.bsz)
+
+        n_retain = 0
+
+        while True:
+            # data   : [n_retain+bptt x bsz]
+            # target : [bptt x bsz]
+            data[n_retain:].fill_(-1)
+            target.fill_(-1)
+
+            valid_batch = True
+
+            for i in range(self.bsz):
+                n_filled = 0
+                try:
+                    while n_filled < self.bptt:
+                        if streams[i] is None or len(streams[i]) <= 1:
+                            streams[i], conds[i] = next(sent_and_cond_stream)
+                        # number of new tokens to fill in
+                        n_new = min(len(streams[i]) - 1, self.bptt - n_filled)
+                        # first n_retain tokens are retained from last batch
+                        data[n_retain+n_filled:n_retain+n_filled+n_new, i] = \
+                            streams[i][:n_new]
+                        target[n_filled:n_filled+n_new, i] = \
+                            streams[i][1:n_new+1]
+                        streams[i] = streams[i][n_new:]
+                        n_filled += n_new
+                except StopIteration:
+                    valid_batch = False
+                    break
+
+            if not valid_batch:
+                return
+
+            data = data.to(self.device)
+            target = target.to(self.device)
+            cond_tensor = torch.as_tensor(conds, dtype=torch.float32, device=self.device)
+
+            yield (data, target, cond_tensor), self.bptt
+
+            n_retain = min(data.size(0), self.ext_len)
+            if n_retain > 0:
+                data[:n_retain] = data[-n_retain:]
+            data.resize_(n_retain + self.bptt, data.size(1))
+
+    def __iter__(self):
+        if self.shuffle:
+            np.random.shuffle(self.paths)
+
+        sents = []
+        for path in self.paths:
+            encoded = self.vocab.encode_file(path, add_double_eos=True,
+                augment_transpose=self.augment_transpose,
+                augment_stretch=self.augment_stretch,
+                augment_switchp1p2=self.augment_switchp1p2,
+                augment_selectens=self.augment_selectens,
+                trim_padding=self.trim_padding)
+            cond_path = os.path.join(os.path.dirname(path), os.path.basename(path).split('.')[0] + '.npy')
+            cond = np.load(cond_path)
+            sents.extend((s, cond) for s in encoded)
+
+        if self.skip_short:
+          sents = [(s, c) for s, c in sents if len(s) >= 10]
+
+        if self.shuffle:
+            np.random.shuffle(sents)
+
+        sent_stream = iter(sents)
+        for batch in self.stream_iterator(sent_stream):
+            yield batch
+
+
 class Corpus(object):
     def __init__(self, path, dataset, *args, **kwargs):
         self.dataset = dataset
@@ -220,7 +302,7 @@ class Corpus(object):
                 'training-monolingual.tokenized.shuffled', 'news.en-*')
             train_paths = glob.glob(train_path_pattern)
             # the vocab will load from file when build_vocab() is called
-        elif self.dataset == 'nesmdb':
+        elif self.dataset in ['nesmdb', 'nesmdb_emb']:
             train_paths = glob.glob(os.path.join(path, 'train', '*.txt'))
             valid_paths = glob.glob(os.path.join(path, 'valid', '*.txt'))
             test_paths = glob.glob(os.path.join(path, 'test', '*.txt'))
@@ -247,7 +329,7 @@ class Corpus(object):
                 os.path.join(path, 'valid.txt'), ordered=False, add_double_eos=True)
             self.test  = self.vocab.encode_file(
                 os.path.join(path, 'test.txt'), ordered=False, add_double_eos=True)
-        elif self.dataset == 'nesmdb':
+        elif self.dataset in ['nesmdb', 'nesmdb_emb']:
             self.train = train_paths
             self.valid = valid_paths
             self.test = test_paths
@@ -259,6 +341,9 @@ class Corpus(object):
             elif self.dataset in ['lm1b', 'nesmdb']:
                 kwargs['shuffle'] = True
                 data_iter = LMMultiFileIterator(self.train, self.vocab, *args, **kwargs)
+            elif self.dataset == 'nesmdb_emb':
+                kwargs['shuffle'] = True
+                data_iter = ConditionalLMMultiFileIterator(self.train, self.vocab, *args, **kwargs)
         elif split in ['valid', 'test']:
             data = self.valid if split == 'valid' else self.test
             if self.dataset in ['ptb', 'wt2', 'wt103', 'enwik8', 'text8']:
@@ -271,6 +356,11 @@ class Corpus(object):
                 kwargs['skip_short'] = True
                 kwargs['trim_padding'] = True
                 data_iter = LMMultiFileIterator(data, self.vocab, *args, **kwargs)
+            elif self.dataset == 'nesmdb_emb':
+                kwargs['shuffle'] = False
+                kwargs['skip_short'] = True
+                kwargs['trim_padding'] = True
+                data_iter = ConditionalLMMultiFileIterator(data, self.vocab, *args, **kwargs)
 
         return data_iter
 
