@@ -662,6 +662,9 @@ class MemTransformerLM(nn.Module):
         word_emb = self.word_emb(dec_inp)
 
         if cond is not None:
+            if len(cond.shape) < 3:
+                cond = cond[None, :, :]
+            clen = cond.shape[0]
             cond = self.cond_proj(cond)
             cond = self.drop(cond)
 
