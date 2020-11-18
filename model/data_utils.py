@@ -271,7 +271,7 @@ class ConditionalLMMultiFileIterator(LMMultiFileIterator):
                 augment_selectens=self.augment_selectens,
                 trim_padding=self.trim_padding)
             cond_path = os.path.join(os.path.dirname(path), os.path.basename(path).split('.')[0] + '.npy')
-            cond = np.load(cond_path)
+            cond = np.load(cond_path).reshape(-1)
             sents.extend((s, cond) for s in encoded)
 
         if self.skip_short:
