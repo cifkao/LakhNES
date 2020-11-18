@@ -302,9 +302,9 @@ else:
 
     if args.restart_state:
         state_dict_path = os.path.join(args.restart_dir, 'model_state.pt')
+        print(f'Loading state_dict from {state_dict_path}...')
         with open(state_dict_path, 'rb') as f:
-            model.load_state_dict(torch.load(f))
-        print(f'Successfully loaded state_dict from {state_dict_path}')
+            print(model.load_state_dict(torch.load(f), strict=False))
 args.n_all_param = sum([p.nelement() for p in model.parameters()])
 args.n_nonemb_param = sum([p.nelement() for p in model.layers.parameters()])
 
