@@ -34,6 +34,8 @@ parser.add_argument('--d_model', type=int, default=500,
                     help='model dimension')
 parser.add_argument('--d_inner', type=int, default=1000,
                     help='inner dimension in FF')
+parser.add_argument('--d_cond', type=int, default=None,
+                    help='conditioning vector dimension (default: no conditioning)')
 parser.add_argument('--dropout', type=float, default=0.0,
                     help='global dropout rate')
 parser.add_argument('--dropatt', type=float, default=0.0,
@@ -293,13 +295,16 @@ else:
         tie_projs=tie_projs, pre_lnorm=args.pre_lnorm, tgt_len=args.tgt_len,
         ext_len=args.ext_len, mem_len=args.mem_len, cutoffs=cutoffs,
         same_length=args.same_length, attn_type=args.attn_type,
-        clamp_len=args.clamp_len, sample_softmax=args.sample_softmax)
+        clamp_len=args.clamp_len, sample_softmax=args.sample_softmax,
+        d_cond=args.d_cond)
     model.apply(weights_init)
     model.word_emb.apply(weights_init) # ensure embedding init is not overridden by out_layer in case of weight sharing
 
     if args.restart_state:
-        with open(os.path.join(args.restart_dir, 'model_state.pt'), 'rb') as f:
+        state_dict_path = os.path.join(args.restart_dir, 'model_state.pt')
+        with open(state_dict_path, 'rb') as f:
             model.load_state_dict(torch.load(f))
+        print(f'Successfully loaded state_dict from {state_dict_path}')
 args.n_all_param = sum([p.nelement() for p in model.parameters()])
 args.n_nonemb_param = sum([p.nelement() for p in model.layers.parameters()])
 
