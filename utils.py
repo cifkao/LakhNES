@@ -48,7 +48,7 @@ class TxlSimpleSampler:
   
   
   @torch.no_grad()
-  def sample_next_token_updating_mem(self, last_token=None, temp=1., topk=None, exclude_eos=True):
+  def sample_next_token_updating_mem(self, last_token=None, temp=1., topk=None, exclude_eos=True, **kwargs):
     last_token = last_token if last_token is not None else 0
 
     # Ensure that user is always passing 0 on first call
@@ -76,7 +76,7 @@ class TxlSimpleSampler:
     inp = torch.from_numpy(_inp).to(self.device)
 
     # Evaluate the model, saving its memory.
-    ret = self.model.forward_generate(inp, *self.mems)
+    ret = self.model.forward_generate(inp, *self.mems, **kwargs)
     all_logits, self.mems = ret[0], ret[1:]
     
     # Select last timestep, only batch item
