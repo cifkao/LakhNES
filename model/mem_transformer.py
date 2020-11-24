@@ -429,11 +429,13 @@ class RelPartialLearnableDecoderLayer(nn.Module):
         self.pos_ff = PositionwiseFF(d_model, d_inner, dropout, 
                                      pre_lnorm=kwargs.get('pre_lnorm'))
 
-    def forward(self, dec_inp, r, r_w_bias, r_r_bias, dec_attn_mask=None, mems=None):
+    def forward(self, dec_inp, r, r_w_bias, r_r_bias, dec_attn_mask=None, mems=None, cond=None):
 
         output = self.dec_attn(dec_inp, r, r_w_bias, r_r_bias,
                                attn_mask=dec_attn_mask,
                                mems=mems)
+        if cond is not None:
+            output += cond
         output = self.pos_ff(output)
 
         return output
@@ -664,7 +666,6 @@ class MemTransformerLM(nn.Module):
         if cond is not None:
             if len(cond.shape) < 3:
                 cond = cond[None, :, :]
-            clen = cond.shape[0]
             cond = self.cond_proj(cond)
             cond = self.drop(cond)
 
