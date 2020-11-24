@@ -171,6 +171,13 @@ args.work_dir = os.path.join(args.work_dir, time.strftime('%Y%m%d-%H%M%S'))
 logging = create_exp_dir(args.work_dir,
     scripts_to_save=['train.py', 'mem_transformer.py'], debug=args.debug)
 
+try:
+    from experiment_impact_tracker.compute_tracker import ImpactTracker
+    tracker = ImpactTracker(args.work_dir)
+    tracker.launch_impact_monitor()
+except ImportError as e:
+    logging(e)
+
 # Set the random seed manually for reproducibility.
 np.random.seed(args.seed)
 torch.manual_seed(args.seed)
