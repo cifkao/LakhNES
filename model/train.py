@@ -176,7 +176,7 @@ try:
     tracker = ImpactTracker(args.work_dir)
     tracker.launch_impact_monitor()
 except ImportError as e:
-    logging(e)
+    logging(str(e))
 
 # Set the random seed manually for reproducibility.
 np.random.seed(args.seed)
