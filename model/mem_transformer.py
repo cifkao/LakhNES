@@ -699,7 +699,8 @@ class MemTransformerLM(nn.Module):
             for i, layer in enumerate(self.layers):
                 mems_i = None if mems is None else mems[i]
                 core_out = layer(core_out, pos_emb, self.r_w_bias,
-                        self.r_r_bias, dec_attn_mask=dec_attn_mask, mems=mems_i)
+                        self.r_r_bias, dec_attn_mask=dec_attn_mask, mems=mems_i,
+                        cond=cond)
                 hids.append(core_out)
         elif self.attn_type == 1: # learnable
             core_out = self.drop(word_emb)
