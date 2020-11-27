@@ -421,13 +421,17 @@ class RelLearnableDecoderLayer(nn.Module):
 
 class RelPartialLearnableDecoderLayer(nn.Module):
     def __init__(self, n_head, d_model, d_head, d_inner, dropout,
-                 **kwargs):
+                 d_cond=None, **kwargs):
         super(RelPartialLearnableDecoderLayer, self).__init__()
 
         self.dec_attn = RelPartialLearnableMultiHeadAttn(n_head, d_model,
                             d_head, dropout, **kwargs)
         self.pos_ff = PositionwiseFF(d_model, d_inner, dropout, 
                                      pre_lnorm=kwargs.get('pre_lnorm'))
+        if d_cond is not None:
+            self.cond_proj = nn.Linear(in_features=d_model + d_cond, out_features=d_model)
+            self.cond_proj.weight[:, :d_model] = torch.eye(d_model, d_model)
+
 
     def forward(self, dec_inp, r, r_w_bias, r_r_bias, dec_attn_mask=None, mems=None, cond=None):
 
@@ -435,7 +439,8 @@ class RelPartialLearnableDecoderLayer(nn.Module):
                                attn_mask=dec_attn_mask,
                                mems=mems)
         if cond is not None:
-            output += cond
+            output = torch.cat([output, cond.expand(*output.shape[:-1], -1)], dim=-1)
+            output = self.cond_proj(output)
         output = self.pos_ff(output)
 
         return output
@@ -525,12 +530,8 @@ class MemTransformerLM(nn.Module):
         self.word_emb = AdaptiveEmbedding(n_token, d_embed, d_model, cutoffs, 
                                           div_val=div_val)
 
-        if d_cond:
-            self.cond_proj = nn.Linear(in_features=d_cond, out_features=d_model)
-            torch.nn.init.xavier_uniform_(self.cond_proj.weight, gain=1e-3)
-
-            if same_length or attn_type != 0:
-                raise NotImplementedError()
+        if d_cond and (same_length or attn_type != 0):
+            raise NotImplementedError()
 
         self.drop = nn.Dropout(dropout)
 
@@ -665,9 +666,6 @@ class MemTransformerLM(nn.Module):
         word_emb = self.word_emb(dec_inp)
 
         if cond is not None:
-            if len(cond.shape) < 3:
-                cond = cond[None, :, :]
-            cond = self.cond_proj(cond)
             cond = self.drop(cond)
 
         mlen = mems[0].size(0) if mems is not None else 0
