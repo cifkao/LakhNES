@@ -550,6 +550,7 @@ class MemTransformerLM(nn.Module):
                 self.layers.append(
                     RelPartialLearnableDecoderLayer(
                         n_head, d_model, d_head, d_inner, dropout,
+                        d_cond=d_cond,
                         tgt_len=tgt_len, ext_len=ext_len, mem_len=mem_len,
                         dropatt=dropatt, pre_lnorm=pre_lnorm)
                 )
