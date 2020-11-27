@@ -527,6 +527,7 @@ class MemTransformerLM(nn.Module):
 
         if d_cond:
             self.cond_proj = nn.Linear(in_features=d_cond, out_features=d_model)
+            torch.nn.init.xavier_uniform_(self.cond_proj.weight, gain=1e-3)
 
             if same_length or attn_type != 0:
                 raise NotImplementedError()
