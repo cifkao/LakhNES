@@ -433,6 +433,7 @@ class RelPartialLearnableDecoderLayer(nn.Module):
             with torch.no_grad():
                 self.cond_proj.weight[:, :d_model] = torch.eye(d_model, d_model)
                 self.cond_proj.weight[:, d_model:] = 0
+            setattr(self.cond_proj, 'skip_init', True)
 
 
     def forward(self, dec_inp, r, r_w_bias, r_r_bias, dec_attn_mask=None, mems=None, cond=None):

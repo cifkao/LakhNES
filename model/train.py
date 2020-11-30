@@ -240,6 +240,9 @@ def init_bias(bias):
     nn.init.constant_(bias, 0.0)
 
 def weights_init(m):
+    if getattr(m, 'skip_init', False):
+        return
+
     classname = m.__class__.__name__
     if classname.find('Linear') != -1:
         if hasattr(m, 'weight') and m.weight is not None:
